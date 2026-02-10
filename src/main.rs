@@ -104,11 +104,15 @@ fn main() {
     let selected_device = &devices[selected_index];
     println!("Selected device: {} at {}", selected_device.name, selected_device.path);
     
-    // Using Common Display Resolution, 2340x1080
+    // 使用设备的真实分辨率
+    let device_width = selected_device.touch_x_max - selected_device.touch_x_min;
+    let device_height = selected_device.touch_y_max - selected_device.touch_y_min;
+    println!("Device resolution: {}x{}", device_width, device_height);
+    
     let mut sim = TouchSimulation::new_with_device(selected_device.clone());
     
     println!("Setting up touch input device...");
-    if !sim.touch_input_setup(TypeMode::TypeB, 1440, 3216) {
+    if !sim.touch_input_setup(TypeMode::TypeB, device_width, device_height) {
         eprintln!("Failed to setup touch device!");
         return;
     }

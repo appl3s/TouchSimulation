@@ -135,21 +135,34 @@ impl TouchSimulation {
 
     pub fn touch_input_setup(&mut self, mode: TypeMode, width: i32, height: i32) -> bool {
         println!("touch_input_setup: mode={:?}, width={}, height={}", mode, width, height);
-        match get_input_devices() {
-            Ok(devices) => {
-                println!("Found {} input devices", devices.len());
-                if !devices.is_empty() {
-                    let result = self.touch_input_start(mode, width, height, devices[0].clone());
-                    println!("touch_input_start result: {}", result);
-                    result
-                } else {
-                    println!("No input devices found");
+        
+        // 如果已经有设备信息，直接使用它
+        if let Some(device_arc) = self.touch_device.clone() {
+            let device_guard = device_arc.lock().unwrap();
+            let device_clone = device_guard.clone();
+            drop(device_guard); // 释放锁，避免借用冲突
+            
+            let result = self.touch_input_start(mode, width, height, device_clone);
+            println!("touch_input_start result: {}", result);
+            result
+        } else {
+            // 如果没有设备信息，尝试扫描获取
+            match get_input_devices() {
+                Ok(devices) => {
+                    println!("Found {} input devices", devices.len());
+                    if !devices.is_empty() {
+                        let result = self.touch_input_start(mode, width, height, devices[0].clone());
+                        println!("touch_input_start result: {}", result);
+                        result
+                    } else {
+                        println!("No input devices found");
+                        false
+                    }
+                }
+                Err(e) => {
+                    println!("Error getting input devices: {}", e);
                     false
                 }
-            }
-            Err(e) => {
-                println!("Error getting input devices: {}", e);
-                false
             }
         }
     }
@@ -158,6 +171,9 @@ impl TouchSimulation {
         if !self.touch_start {
             self.curr_mode = mode;
 
+            // 保存设备路径供后续使用（如果需要的话）
+            let _device_path = in_dev.path.clone();
+            
             // Init Things
             self.touch_device = Some(Arc::new(Mutex::new(in_dev)));
             self.display_width = width;
@@ -169,7 +185,7 @@ impl TouchSimulation {
             self.stop_channel = Some(stop_sender);
 
             if mode == TypeMode::TypeA || mode == TypeMode::TypeARnd {
-                // Setup TypeA UInput Touch Device
+                // 始终创建虚拟设备用于写入，真实设备只用于参数参考
                 let uinput_dev = if mode == TypeMode::TypeARnd {
                     match new_type_a_dev_random(&*self.touch_device.as_ref().unwrap().lock().unwrap()) {
                         Ok(dev) => dev,
@@ -182,6 +198,7 @@ impl TouchSimulation {
                     }
                 };
                 self.uinput_device = Some(Arc::new(Mutex::new(uinput_dev)));
+                println!("touch_input_start: created virtual uinput device for TypeA mode");
 
                 // Set Default Values in Touch Contacts Array
                 let device = self.touch_device.as_ref().unwrap().lock().unwrap();
@@ -194,10 +211,10 @@ impl TouchSimulation {
                     event_dispatcher_a(uinput_clone, contacts_clone, sync_receiver, stop_receiver);
                 });
             } else {
-                // Setup TypeB UInput Touch Device
+                // 始终创建虚拟设备用于写入，真实设备只用于参数参考
                 let uinput_dev = match new_type_b_dev_same(&*self.touch_device.as_ref().unwrap().lock().unwrap()) {
                     Ok(dev) => {
-                        println!("touch_input_start: successfully created uinput device");
+                        println!("touch_input_start: successfully created virtual uinput device for TypeB mode");
                         dev
                     },
                     Err(e) => {
