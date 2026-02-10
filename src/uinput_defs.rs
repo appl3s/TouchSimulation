@@ -26,6 +26,11 @@ pub const ABS_MT_PRESSURE: u16 = 0x3a;
 pub const ABS_MT_DISTANCE: u16 = 0x3b;
 pub const ABS_MT_TOOL_X: u16 = 0x3c;
 pub const ABS_MT_TOOL_Y: u16 = 0x3d;
+
+// 真实设备中看到的额外ABS事件代码
+pub const ABS_PROFILE: u16 = 0x15;  // 在真实设备序列中看到
+pub const ABS_UNKNOWN_22: u16 = 0x22;  // 未知代码，在真实设备序列中看到
+pub const ABS_UNKNOWN_23: u16 = 0x23;  // 未知代码，在真实设备序列中看到
 pub const EV_MAX: u16 = 0x1f;
 pub const EV_CNT: usize = EV_MAX as usize + 1;
 pub const ABS_MAX: u16 = 0x3f;

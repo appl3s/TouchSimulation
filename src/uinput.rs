@@ -40,7 +40,7 @@ impl Clone for InputDevice {
             has_width_minor: self.has_width_minor,
             has_orientation: self.has_orientation,
             has_pressure: self.has_pressure,
-            file: Arc::new(Mutex::new(File::open("/dev/null").unwrap())), // Simplified clone
+            file: self.file.clone(), // 保留真实设备的文件
         }
     }
 }
@@ -51,7 +51,7 @@ impl InputDevice {
         let file = self.file.lock().unwrap();
         unsafe {
             let fd = file.as_raw_fd();
-            let result = libc::ioctl(fd, eviocgrab() as libc::c_int, 1);
+            let result = libc::ioctl(fd, eviocgrab() as libc::c_int, 1i32 as libc::c_ulong);
             if result == -1 {
                 return Err(std::io::Error::last_os_error());
             } else {
@@ -67,7 +67,7 @@ impl InputDevice {
         let file = self.file.lock().unwrap();
         unsafe {
             let fd = file.as_raw_fd();
-            let result = libc::ioctl(fd, eviocgrab() as libc::c_int, 0);
+            let result = libc::ioctl(fd, eviocgrab() as libc::c_int, 0i32 as libc::c_ulong);
             if result == -1 {
                 return Err(std::io::Error::last_os_error());
             } else {
@@ -82,9 +82,9 @@ impl InputDevice {
         use crate::uinput_defs::InputEvent;
         use nix::sys::time::TimeVal;
         
-        // 使用与Go相同的时间戳格式
+        // 创建与Go版本完全一致的事件结构
         let event = InputEvent {
-            time: TimeVal::new(0, 0),
+            time: TimeVal::new(0, 0),  // 零时间戳，与Go版本一致
             event_type,
             code,
             value,
@@ -92,36 +92,38 @@ impl InputDevice {
         
         let mut file = self.file.lock().unwrap();
         
-        // 手动序列化以确保LittleEndian字节序，与Go版本保持一致
+        // 使用与Go版本完全一致的序列化方式
         let mut buffer = Vec::with_capacity(std::mem::size_of::<InputEvent>());
         
-        // TimeVal: sec (i64) + usec (i64) = 16字节
+        // TimeVal: 必须严格按照Go的syscall.Timeval格式
+        // Go的Timeval: {sec: i64, usec: i64} = 16字节
         let time_val = event.time;
-        buffer.extend_from_slice(&(time_val.tv_sec() as i64).to_le_bytes());
-        buffer.extend_from_slice(&(time_val.tv_usec() as i64).to_le_bytes());
+        buffer.extend_from_slice(&(time_val.tv_sec()).to_le_bytes());  // i64
+        buffer.extend_from_slice(&(time_val.tv_usec()).to_le_bytes()); // i64
         
-        // event_type: u16 = 2字节
+        // Type: u16 = 2字节
         buffer.extend_from_slice(&event.event_type.to_le_bytes());
         
-        // code: u16 = 2字节
+        // Code: u16 = 2字节
         buffer.extend_from_slice(&event.code.to_le_bytes());
         
-        // value: i32 = 4字节
+        // Value: i32 = 4字节
         buffer.extend_from_slice(&event.value.to_le_bytes());
         
-        // 填充到24字节（如果TimeVal大小不同）
+        // 确保总大小为24字节（与Go的InputEvent大小一致）
         let current_size = buffer.len();
         let target_size = std::mem::size_of::<InputEvent>();
         if current_size < target_size {
             buffer.resize(target_size, 0);
         }
         
-        println!("write_event: writing event type={}, code={}, value={} to {} (buffer size: {})",
-                 event_type, code, value, self.path, buffer.len());
+        println!("write_event: device path={}, writing event type={}, code={}, value={} (buffer size: {})",
+                 self.path, event_type, code, value, buffer.len());
         
-        let result = file.write_all(&buffer);
+        // 立即刷新，确保事件被内核及时处理
+        let result = file.write_all(&buffer).and_then(|_| file.flush());
         if result.is_ok() {
-            println!("write_event: successfully wrote event");
+            println!("write_event: successfully wrote and flushed event");
         } else {
             println!("write_event: failed to write event: {:?}", result);
         }
@@ -187,34 +189,34 @@ fn create_uinput_device(name: &str, is_type_b: bool) -> Result<File, Box<dyn std
     // Enable event types - 参考Go实现
     unsafe {
         // Enable EV_KEY - 参考Go实现
-        let result = libc::ioctl(fd, UISETEVBIT() as libc::c_int, EV_KEY as libc::c_int);
+        let result = libc::ioctl(fd, UISETEVBIT() as libc::c_int, EV_KEY as libc::c_ulong);
         if result == -1 {
             return Err(Box::new(std::io::Error::last_os_error()));
         }
         
         // Enable BTN_TOUCH - 参考Go实现
-        let result = libc::ioctl(fd, UISETKEYBIT() as libc::c_int, BTN_TOUCH as libc::c_int);
+        let result = libc::ioctl(fd, UISETKEYBIT() as libc::c_int, BTN_TOUCH as libc::c_ulong);
         if result == -1 {
             return Err(Box::new(std::io::Error::last_os_error()));
         }
         
         // Enable EV_ABS - 参考Go实现
-        let result = libc::ioctl(fd, UISETEVBIT() as libc::c_int, EV_ABS as libc::c_int);
+        let result = libc::ioctl(fd, UISETEVBIT() as libc::c_int, EV_ABS as libc::c_ulong);
         if result == -1 {
             return Err(Box::new(std::io::Error::last_os_error()));
         }
         
         if is_type_b {
             // Type B设备配置 - 参考Go实现
-            let result = libc::ioctl(fd, UISETABSBIT() as libc::c_int, ABS_MT_SLOT as libc::c_int);
+            let result = libc::ioctl(fd, UISETABSBIT() as libc::c_int, ABS_MT_SLOT as libc::c_ulong);
             if result == -1 {
                 return Err(Box::new(std::io::Error::last_os_error()));
             }
-            let result = libc::ioctl(fd, UISETABSBIT() as libc::c_int, ABS_MT_POSITION_X as libc::c_int);
+            let result = libc::ioctl(fd, UISETABSBIT() as libc::c_int, ABS_MT_POSITION_X as libc::c_ulong);
             if result == -1 {
                 return Err(Box::new(std::io::Error::last_os_error()));
             }
-            let result = libc::ioctl(fd, UISETABSBIT() as libc::c_int, ABS_MT_POSITION_Y as libc::c_int);
+            let result = libc::ioctl(fd, UISETABSBIT() as libc::c_int, ABS_MT_POSITION_Y as libc::c_ulong);
             if result == -1 {
                 return Err(Box::new(std::io::Error::last_os_error()));
             }

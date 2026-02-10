@@ -41,12 +41,12 @@ pub fn scan_input_devices() -> Result<Vec<InputDevice>, Box<dyn std::error::Erro
         
         println!("scan_input_devices: checking device {}", path_str);
         
-        // 打开设备文件
+        // 打开设备文件（读写模式，用于写入事件）
         match std::fs::OpenOptions::new()
             .read(true)
-            .write(false)
+            .write(true)  // 改为true，允许写入事件
             .custom_flags(libc::O_NONBLOCK)
-            .open(&path) 
+            .open(&path)
         {
             Ok(device_file) => {
                 let fd = device_file.as_raw_fd();
