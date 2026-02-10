@@ -2,6 +2,7 @@ mod uinput_defs;
 mod uinput;
 mod touch_input;
 mod utils;
+mod device_scanner;
 
 use touch_input::{TouchSimulation, TypeMode};
 use std::{
@@ -44,15 +45,71 @@ fn swipe(sim: &mut TouchSimulation, start_x: i32, start_y: i32, end_x: i32, end_
     sim.send_touch_up();
 }
 
+fn select_device(devices: &Vec<uinput::InputDevice>) -> Option<usize> {
+    println!("Found {} input devices:", devices.len());
+    for (i, device) in devices.iter().enumerate() {
+        println!("{}: {} (path: {}, slots: {}, resolution: {}x{})", 
+                 i, device.name, device.path, device.slots, 
+                 device.touch_x_max - device.touch_x_min, 
+                 device.touch_y_max - device.touch_y_min);
+    }
+    
+    print!("Select device (0-{}), or press Enter to use default (0): ", devices.len() - 1);
+    io::stdout().flush().unwrap();
+    
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).unwrap();
+    
+    let input = input.trim();
+    if input.is_empty() {
+        return Some(0);
+    }
+    
+    match input.parse::<usize>() {
+        Ok(index) if index < devices.len() => Some(index),
+        _ => {
+            println!("Invalid selection. Using default device 0.");
+            Some(0)
+        }
+    }
+}
+
 fn main() {
     println!("Touch Simulation Rust Version - Starting...");
     
+    // 扫描输入设备
+    println!("Scanning for input devices...");
+    let devices = match device_scanner::scan_input_devices() {
+        Ok(devices) => devices,
+        Err(e) => {
+            eprintln!("Failed to scan input devices: {}", e);
+            return;
+        }
+    };
+    
+    if devices.is_empty() {
+        eprintln!("No input devices found!");
+        return;
+    }
+    
+    // 选择设备
+    let selected_index = match select_device(&devices) {
+        Some(index) => index,
+        None => {
+            println!("No device selected. Exiting.");
+            return;
+        }
+    };
+    
+    let selected_device = &devices[selected_index];
+    println!("Selected device: {} at {}", selected_device.name, selected_device.path);
+    
     // Using Common Display Resolution, 2340x1080
-    let mut sim = TouchSimulation::new();
+    let mut sim = TouchSimulation::new_with_device(selected_device.clone());
     
     println!("Setting up touch input device...");
     if !sim.touch_input_setup(TypeMode::TypeB, 1440, 3216) {
-        eprintln!("No Touch Device Found!");
+        eprintln!("Failed to setup touch device!");
         return;
     }
     println!("Touch input device setup successful!");

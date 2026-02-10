@@ -109,6 +109,30 @@ impl TouchSimulation {
         }
     }
 
+    pub fn new_with_device(input_device: InputDevice) -> Self {
+        let sim = Self {
+            curr_mode: TypeMode::TypeB,
+            touch_send: false,
+            touch_start: false,
+            display_width: 0,
+            display_height: 0,
+            fake_touch_major: -1,
+            fake_touch_minor: -1,
+            fake_width_major: -1,
+            fake_width_minor: -1,
+            fake_orientation: -1,
+            fake_pressure: -1,
+            touch_device: Some(Arc::new(Mutex::new(input_device))),
+            uinput_device: None,
+            sync_channel: None,
+            stop_channel: None,
+            touch_contacts_a: Vec::new(),
+            touch_contacts_b: Vec::new(),
+            touch_contacts_b_arc: None,
+        };
+        sim
+    }
+
     pub fn touch_input_setup(&mut self, mode: TypeMode, width: i32, height: i32) -> bool {
         println!("touch_input_setup: mode={:?}, width={}, height={}", mode, width, height);
         match get_input_devices() {
