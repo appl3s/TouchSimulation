@@ -15,7 +15,7 @@ pub enum TypeMode {
     TypeB,
 }
 
-const FAKE_CONTACT: usize = 9;
+const FAKE_CONTACT: usize = 0;  // 改为0，真实设备可能期望第一个contact
 static TRACKING_ID_COUNTER: AtomicI32 = AtomicI32::new(100);
 
 #[derive(Debug, Clone)]
@@ -332,10 +332,14 @@ impl TouchSimulation {
         }
 
         let device = self.touch_device.as_ref().unwrap().lock().unwrap();
-        let x = (x * device.touch_x_max / self.display_width) + device.touch_x_min;
-        let y = (y * device.touch_y_max / self.display_height) + device.touch_y_min;
         
-        println!("send_touch_move: converted coordinates: x={}, y={}", x, y);
+        // ✅ 关键修复：使用设备原始坐标范围，不需要转换
+        // 从真实getevent序列看，坐标直接使用设备原始范围
+        // 例如：0x3389 = 13193, 0x3024 = 12324
+        let x = x; // 直接使用原始坐标
+        let y = y; // 直接使用原始坐标
+        
+        println!("send_touch_move: using original coordinates: x={}, y={}", x, y);
 
         if self.curr_mode == TypeMode::TypeA || self.curr_mode == TypeMode::TypeARnd {
             println!("send_touch_move: updating TypeA contact {}", FAKE_CONTACT);
@@ -567,49 +571,56 @@ fn event_dispatcher_b(
                     println!("event_dispatcher_b: contact {} - active: {}, tracking_id: {}, pos_x: {}, pos_y: {}",
                              idx, contact.active, contact.tracking_id, contact.position_x, contact.position_y);
                     
-                    if contact.active && contact.tracking_id >= 0 {
-                        println!("event_dispatcher_b: processing active contact {}", idx);
+                    // ✅ 关键修复：只处理contact 0，真实设备可能只支持单点触摸
+                    if idx == 0 && contact.active && contact.tracking_id >= 0 {
+                        println!("event_dispatcher_b: processing active contact 0");
 
+                        // 基于真实物理设备序列的精确实现
+                        // 真实序列中没有ABS_MT_SLOT，但有BTN_TOOL_FINGER
+                        
                         // 检查是否是新的触摸（tracking_id变化）
-                        let old_id = tracking_id_state[idx];
+                        let old_id = tracking_id_state[0];
                         let is_new_touch = contact.tracking_id >= 0 && contact.tracking_id != old_id;
                         
                         if is_new_touch {
-                            // 新触摸开始：先发送TRACKING_ID
+                            // 新触摸开始：先发送TRACKING_ID（真实序列中的第一个事件）
                             println!("event_dispatcher_b: writing ABS_MT_TRACKING_ID: {}", contact.tracking_id);
                             let _ = uinput.write_event(EV_ABS, ABS_MT_TRACKING_ID as u16, contact.tracking_id);
                             
                             // 更新tracking_id记录
-                            tracking_id_state[idx] = contact.tracking_id;
+                            tracking_id_state[0] = contact.tracking_id;
                             
-                            // 第一个手指按下时发送按钮事件
+                            // 发送BTN_TOUCH和BTN_TOOL_FINGER（真实序列中的按钮事件）
                             if !is_btn_down {
                                 println!("event_dispatcher_b: button down");
                                 is_btn_down = true;
                                 println!("event_dispatcher_b: writing BTN_TOUCH: 1");
                                 let _ = uinput.write_event(EV_KEY, BTN_TOUCH as u16, 1);
+                                println!("event_dispatcher_b: writing BTN_TOOL_FINGER: 1");
+                                let _ = uinput.write_event(EV_KEY, BTN_TOOL_FINGER as u16, 1);
                             }
                         }
 
-                        // 发送SLOT（必须在TRACKING_ID之后）
-                        println!("event_dispatcher_b: writing ABS_MT_SLOT: {}", idx as i32);
-                        let _ = uinput.write_event(EV_ABS, ABS_MT_SLOT as u16, idx as i32);
-
-                        // 发送其他属性（按照真实设备顺序）
+                        // 发送触摸属性（按照真实设备顺序和值范围）
+                        // 真实序列中的值都很小：0x05, 0x07等
                         if contact.touch_major >= 0 {
-                            println!("event_dispatcher_b: writing ABS_MT_TOUCH_MAJOR: {}", contact.touch_major);
-                            let _ = uinput.write_event(EV_ABS, ABS_MT_TOUCH_MAJOR as u16, contact.touch_major);
+                            // 使用较小的值，类似真实设备
+                            let major_value = if contact.touch_major > 15 { 5 } else { contact.touch_major };
+                            println!("event_dispatcher_b: writing ABS_MT_TOUCH_MAJOR: {}", major_value);
+                            let _ = uinput.write_event(EV_ABS, ABS_MT_TOUCH_MAJOR as u16, major_value);
                         }
                         if contact.touch_minor >= 0 {
-                            println!("event_dispatcher_b: writing ABS_MT_TOUCH_MINOR: {}", contact.touch_minor);
-                            let _ = uinput.write_event(EV_ABS, ABS_MT_TOUCH_MINOR as u16, contact.touch_minor);
+                            let minor_value = if contact.touch_minor > 15 { 7 } else { contact.touch_minor };
+                            println!("event_dispatcher_b: writing ABS_MT_TOUCH_MINOR: {}", minor_value);
+                            let _ = uinput.write_event(EV_ABS, ABS_MT_TOUCH_MINOR as u16, minor_value);
                         }
                         if contact.pressure >= 0 {
-                            println!("event_dispatcher_b: writing ABS_MT_PRESSURE: {}", contact.pressure);
-                            let _ = uinput.write_event(EV_ABS, ABS_MT_PRESSURE as u16, contact.pressure);
+                            let pressure_value = if contact.pressure > 15 { 7 } else { contact.pressure };
+                            println!("event_dispatcher_b: writing ABS_MT_PRESSURE: {}", pressure_value);
+                            let _ = uinput.write_event(EV_ABS, ABS_MT_PRESSURE as u16, pressure_value);
                         }
 
-                        // 最后发送坐标
+                        // 发送坐标（真实序列中的最后几个事件）
                         if contact.position_x >= 0 {
                             println!("event_dispatcher_b: writing ABS_MT_POSITION_X: {}", contact.position_x);
                             let _ = uinput.write_event(EV_ABS, ABS_MT_POSITION_X as u16, contact.position_x);
@@ -618,19 +629,16 @@ fn event_dispatcher_b(
                             println!("event_dispatcher_b: writing ABS_MT_POSITION_Y: {}", contact.position_y);
                             let _ = uinput.write_event(EV_ABS, ABS_MT_POSITION_Y as u16, contact.position_y);
                         }
-                    } else if !contact.active && contact.tracking_id >= 0 {
-                        println!("event_dispatcher_b: deactivating contact {}", idx);
+                    } else if idx == 0 && !contact.active && contact.tracking_id >= 0 {
+                        println!("event_dispatcher_b: deactivating contact 0");
                         
-                        // 发送SLOT
-                        println!("event_dispatcher_b: writing ABS_MT_SLOT: {}", idx as i32);
-                        let _ = uinput.write_event(EV_ABS, ABS_MT_SLOT as u16, idx as i32);
-                        
-                        // 发送TRACKING_ID -1（释放）
+                        // ✅ 移除ABS_MT_SLOT - 真实序列中没有这个事件
+                        // 直接发送TRACKING_ID -1（释放）
                         println!("event_dispatcher_b: writing ABS_MT_TRACKING_ID: -1");
                         let _ = uinput.write_event(EV_ABS, ABS_MT_TRACKING_ID as u16, -1);
                         
                         // 重置tracking_id记录
-                        tracking_id_state[idx] = -1;
+                        tracking_id_state[0] = -1;
                         
                         contact.tracking_id = -1;
                     }

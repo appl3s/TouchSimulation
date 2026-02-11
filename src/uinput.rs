@@ -81,10 +81,19 @@ impl InputDevice {
     pub fn write_event(&mut self, event_type: u16, code: u16, value: i32) -> std::io::Result<()> {
         use crate::uinput_defs::InputEvent;
         use nix::sys::time::TimeVal;
+        use std::time::{SystemTime, UNIX_EPOCH};
         
-        // 创建与Go版本完全一致的事件结构
+        // ✅ 修复：使用真实时间戳，而不是零时间戳
+        // 内核需要真实的时间戳来正确处理事件
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default();
+        
+        let secs = now.as_secs() as i64;
+        let usecs = now.subsec_micros() as i64;
+        
         let event = InputEvent {
-            time: TimeVal::new(0, 0),  // 零时间戳，与Go版本一致
+            time: TimeVal::new(secs, usecs),
             event_type,
             code,
             value,

@@ -11,10 +11,12 @@ use std::{
     time::Duration,
 };
 
-const X: i32 = 746;
-const Y: i32 = 1064;
-const NX: i32 = 400;
-const NY: i32 = 1408;
+// ✅ 使用真实序列中的坐标值
+// 从您的真实getevent序列：0x3389 = 13193, 0x3024 = 12324
+const X: i32 = 13193;  // 真实X坐标
+const Y: i32 = 12324;  // 真实Y坐标
+const NX: i32 = 12000; // 稍微偏移的真实坐标
+const NY: i32 = 13000; // 稍微偏移的真实坐标
 
 fn gen_move_points(sim: &mut TouchSimulation, start_x: i32, start_y: i32, end_x: i32, end_y: i32) {
     let min_point_count = 2;

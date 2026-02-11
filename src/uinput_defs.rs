@@ -8,6 +8,7 @@ pub const EV_KEY: u16 = 0x01;
 pub const EV_ABS: u16 = 0x03;
 pub const EV_FF: u16 = 0x15;
 pub const BTN_TOUCH: u16 = 0x14a;
+pub const BTN_TOOL_FINGER: u16 = 0x145;
 pub const SYN_REPORT: u16 = 0;
 pub const SYN_MT_REPORT: u16 = 2;
 pub const SYN_DROPPED: u16 = 3;
